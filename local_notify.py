@@ -19,9 +19,7 @@ import wave
 _CHIME_PATH = os.path.join(tempfile.gettempdir(), "rasptv_chime.wav")
 
 
-def _ensure_chime_wav():
-  if os.path.exists(_CHIME_PATH):
-    return _CHIME_PATH
+def _generate_chime_wav(volume):
   framerate = 44100
   frames = bytearray()
   for freq in (880, 660):
@@ -29,7 +27,7 @@ def _ensure_chime_wav():
     for i in range(n_samples):
       t = i / framerate
       envelope = min(1.0, (n_samples - i) / (n_samples * 0.3))
-      sample = math.sin(2 * math.pi * freq * t) * envelope * 0.5
+      sample = math.sin(2 * math.pi * freq * t) * envelope * 0.5 * volume
       frames += struct.pack("<h", int(sample * 32767))
     frames += b"\x00\x00" * int(framerate * 0.05)
   with wave.open(_CHIME_PATH, "w") as wf:
@@ -40,15 +38,19 @@ def _ensure_chime_wav():
   return _CHIME_PATH
 
 
-def play_chime():
+def play_chime(volume=1.0):
+  volume = max(0.0, min(1.0, volume))
+
   def _run():
     try:
       if sys.platform.startswith("win"):
+        if volume <= 0:
+          return
         import winsound
         winsound.Beep(880, 250)
         winsound.Beep(660, 250)
         return
-      path = _ensure_chime_wav()
+      path = _generate_chime_wav(volume)
       if shutil.which("aplay"):
         subprocess.run(
             ["aplay", "-q", path],
@@ -60,13 +62,16 @@ def play_chime():
   threading.Thread(target=_run, daemon=True).start()
 
 
-def speak(text):
+def speak(text, volume=1.0):
+  volume = max(0.0, min(1.0, volume))
+  amplitude = int(volume * 100)  # espeakの-aは0〜200、100が標準音量
+
   def _run():
     try:
       for cmd in ("espeak-ng", "espeak"):
         if shutil.which(cmd):
           subprocess.run(
-              [cmd, "-v", "ja", text],
+              [cmd, "-v", "ja", "-a", str(amplitude), text],
               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
           )
           return

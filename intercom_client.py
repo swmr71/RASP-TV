@@ -33,16 +33,18 @@ def save_config(config):
     json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-def send_message(message, targets=None, timeout=3):
+def send_message(message, targets=None, timeout=3, volume=1.0):
   """設定済みの宛先すべてにメッセージを送信する。
 
+  volume: 0.0〜1.0。受信側の音量（チャイム・読み上げ）に反映される。
   戻り値: [(name, url, success: bool, error: str|None), ...]
   """
   if targets is None:
     targets = load_config().get("targets", [])
 
+  volume = max(0.0, min(1.0, volume))
   results = []
-  body = json.dumps({"message": message}).encode("utf-8")
+  body = json.dumps({"message": message, "volume": volume}).encode("utf-8")
   for target in targets:
     name = target.get("name", target.get("url", "?"))
     url = target.get("url", "").rstrip("/") + "/send"

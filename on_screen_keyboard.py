@@ -51,6 +51,7 @@ class OnScreenKeyboard:
     self.on_submit = on_submit
     self.text = ""
     self.mode = "kana"
+    self.volume = 1.0
     self.pos = [0, 0]
     self.widgets = []
 
@@ -70,7 +71,13 @@ class OnScreenKeyboard:
         self.win, text="|", font=("Helvetica", 24), fg=BG_ACCENT,
         bg=BG_PANEL, width=40, anchor="w", padx=12,
     )
-    self.preview.pack(pady=(0, 20))
+    self.preview.pack(pady=(0, 6))
+
+    self.volume_label = tk.Label(
+        self.win, text="音量: 100%", font=("Helvetica", 14),
+        fg=FG_KEY, bg=BG,
+    )
+    self.volume_label.pack(pady=(0, 14))
 
     self.grid_frame = tk.Frame(self.win, bg=BG)
     self.grid_frame.pack(expand=True)
@@ -98,6 +105,8 @@ class OnScreenKeyboard:
         {"label": "削除", "action": self.backspace},
         {"label": "全消去", "action": self.clear},
         {"label": toggle_label, "action": self.toggle_mode},
+        {"label": "音量-", "action": self.volume_down},
+        {"label": "音量+", "action": self.volume_up},
         {"label": "送信", "action": self.submit, "accent": True},
         {"label": "キャンセル", "action": self.cancel},
     ]
@@ -185,6 +194,17 @@ class OnScreenKeyboard:
     self.pos = [0, 0]
     self.build_grid()
 
+  def volume_down(self):
+    self.volume = max(0.0, round(self.volume - 0.1, 2))
+    self.update_volume_label()
+
+  def volume_up(self):
+    self.volume = min(1.0, round(self.volume + 0.1, 2))
+    self.update_volume_label()
+
+  def update_volume_label(self):
+    self.volume_label.config(text=f"音量: {round(self.volume * 100)}%")
+
   def update_preview(self):
     self.preview.config(text=(self.text or " ") + "|")
 
@@ -200,10 +220,11 @@ class OnScreenKeyboard:
 
   def submit(self):
     text = self.text.strip()
+    volume = self.volume
     self.win.grab_release()
     self.win.destroy()
     if text and self.on_submit:
-      self.on_submit(text)
+      self.on_submit(text, volume)
 
   def cancel(self):
     self.win.grab_release()

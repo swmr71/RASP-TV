@@ -33,12 +33,12 @@ def remove_local_listener(callback):
       _local_listeners.remove(callback)
 
 
-def _notify_local_listeners(message):
+def _notify_local_listeners(message, volume):
   with _local_listeners_lock:
     listeners = list(_local_listeners)
   for callback in listeners:
     try:
-      callback(message)
+      callback(message, volume)
     except Exception:
       pass
 
@@ -76,8 +76,14 @@ RECEIVER_PAGE = """<!doctype html>
   }
   #idle .label { font-size: 22px; color: #45475a; }
   #sendForm {
-    display: flex; gap: 10px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    justify-content: center;
   }
+  #volumeWrap {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 14px; color: #a6adc8;
+  }
+  #volumeInput { width: 140px; }
   #sendInput {
     font-size: 20px; padding: 12px 16px;
     background: #313244; color: #cdd6f4;
@@ -117,6 +123,11 @@ RECEIVER_PAGE = """<!doctype html>
     <div class="label">インターホン待機中</div>
     <form id="sendForm">
       <input id="sendInput" type="text" placeholder="メッセージを入力して送信" autocomplete="off">
+      <div id="volumeWrap">
+        <span>音量</span>
+        <input id="volumeInput" type="range" min="0" max="100" value="100">
+        <span id="volumeLabel">100%</span>
+      </div>
       <button id="sendBtn" type="submit">送信</button>
     </form>
     <div id="sendStatus"></div>
@@ -138,8 +149,9 @@ const unlockEl = document.getElementById('unlock');
 let audioCtx = null;
 let hideTimer = null;
 
-function playChime() {
+function playChime(volume) {
   if (!audioCtx) return;
+  const peak = Math.max(0.0001, 0.4 * volume);
   const now = audioCtx.currentTime;
   [880, 660].forEach((freq, i) => {
     const osc = audioCtx.createOscillator();
@@ -147,7 +159,7 @@ function playChime() {
     osc.type = 'sine';
     osc.frequency.value = freq;
     gain.gain.setValueAtTime(0.0001, now + i * 0.35);
-    gain.gain.exponentialRampToValueAtTime(0.4, now + i * 0.35 + 0.05);
+    gain.gain.exponentialRampToValueAtTime(peak, now + i * 0.35 + 0.05);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.35 + 0.6);
     osc.connect(gain).connect(audioCtx.destination);
     osc.start(now + i * 0.35);
@@ -155,20 +167,21 @@ function playChime() {
   });
 }
 
-function speak(text) {
+function speak(text, volume) {
   if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const utter = new SpeechSynthesisUtterance(text);
   utter.lang = 'ja-JP';
   utter.rate = 1.0;
+  utter.volume = Math.max(0, Math.min(1, volume));
   window.speechSynthesis.speak(utter);
 }
 
-function showMessage(text) {
+function showMessage(text, volume) {
   messageEl.textContent = text;
   overlayEl.classList.add('show');
-  playChime();
-  setTimeout(() => speak(text), 700);
+  playChime(volume);
+  setTimeout(() => speak(text, volume), 700);
   clearTimeout(hideTimer);
   const displaySeconds = Math.max(8, text.length * 0.5);
   hideTimer = setTimeout(hideMessage, displaySeconds * 1000);
@@ -191,7 +204,8 @@ function connect() {
   ws.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
-      if (data.message) showMessage(data.message);
+      const volume = typeof data.volume === 'number' ? data.volume : 1.0;
+      if (data.message) showMessage(data.message, volume);
     } catch (e) { /* ignore malformed payloads */ }
   };
 }
@@ -199,16 +213,22 @@ function connect() {
 const sendForm = document.getElementById('sendForm');
 const sendInput = document.getElementById('sendInput');
 const sendStatus = document.getElementById('sendStatus');
+const volumeInput = document.getElementById('volumeInput');
+const volumeLabel = document.getElementById('volumeLabel');
+volumeInput.addEventListener('input', () => {
+  volumeLabel.textContent = `${volumeInput.value}%`;
+});
 sendForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const message = sendInput.value.trim();
   if (!message) return;
+  const volume = Number(volumeInput.value) / 100;
   sendStatus.textContent = '送信中...';
   try {
     const res = await fetch('/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, volume }),
     });
     const data = await res.json();
     sendStatus.textContent = data.ok ? `送信しました (${data.delivered}件)` : '送信に失敗しました';
@@ -259,7 +279,12 @@ def send():
   message = (data.get("message") or "").strip()
   if not message:
     return jsonify({"ok": False, "error": "message is required"}), 400
-  delivered = _broadcast(message)
+  try:
+    volume = float(data.get("volume", 1.0))
+  except (TypeError, ValueError):
+    volume = 1.0
+  volume = max(0.0, min(1.0, volume))
+  delivered = _broadcast(message, volume)
   return jsonify({"ok": True, "delivered": delivered})
 
 
@@ -270,8 +295,8 @@ def health():
   return jsonify({"ok": True, "clients": count})
 
 
-def _broadcast(message):
-  payload = json.dumps({"message": message})
+def _broadcast(message, volume=1.0):
+  payload = json.dumps({"message": message, "volume": volume})
   delivered = 0
   with _clients_lock:
     dead = []
@@ -283,7 +308,7 @@ def _broadcast(message):
         dead.append(conn)
     for conn in dead:
       _clients.discard(conn)
-  _notify_local_listeners(message)
+  _notify_local_listeners(message, volume)
   return delivered
 
 

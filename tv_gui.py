@@ -193,11 +193,11 @@ class TvMenuApp:
         on_submit=self.send_intercom_message,
     )
 
-  def send_intercom_message(self, message):
-    self.show_toast(f"送信中: {message}")
+  def send_intercom_message(self, message, volume=1.0):
+    self.show_toast(f"送信中: {message} (音量{round(volume * 100)}%)")
 
     def task():
-      results = intercom_client.send_message(message)
+      results = intercom_client.send_message(message, volume=volume)
       ok_count = sum(1 for _, _, ok, _ in results if ok)
       total = len(results)
       if total == 0:
@@ -210,13 +210,13 @@ class TvMenuApp:
 
     threading.Thread(target=task, daemon=True).start()
 
-  def handle_incoming_intercom(self, message):
+  def handle_incoming_intercom(self, message, volume=1.0):
     """intercom_serverが別スレッドでメッセージを受信したときのコールバック。"""
-    self.root.after(0, lambda: self.show_intercom_overlay(message))
+    self.root.after(0, lambda: self.show_intercom_overlay(message, volume))
 
-  def show_intercom_overlay(self, message):
-    local_notify.play_chime()
-    threading.Timer(0.7, lambda: local_notify.speak(message)).start()
+  def show_intercom_overlay(self, message, volume=1.0):
+    local_notify.play_chime(volume)
+    threading.Timer(0.7, lambda: local_notify.speak(message, volume)).start()
 
     if self._intercom_overlay is not None:
       self._intercom_overlay.destroy()
