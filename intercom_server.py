@@ -46,8 +46,25 @@ RECEIVER_PAGE = """<!doctype html>
   }
   #idle {
     position: fixed; inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 22px; color: #45475a;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px;
+  }
+  #idle .label { font-size: 22px; color: #45475a; }
+  #sendForm {
+    display: flex; gap: 10px;
+  }
+  #sendInput {
+    font-size: 20px; padding: 12px 16px;
+    background: #313244; color: #cdd6f4;
+    border: none; border-radius: 8px; width: 320px;
+  }
+  #sendBtn {
+    font-size: 20px; padding: 12px 24px;
+    background: #89b4fa; color: #11111b;
+    border: none; border-radius: 8px; cursor: pointer;
+  }
+  #sendStatus {
+    font-size: 14px; color: #a6e3a1; min-height: 18px;
   }
   #overlay {
     position: fixed; inset: 0;
@@ -71,7 +88,14 @@ RECEIVER_PAGE = """<!doctype html>
 </head>
 <body>
   <div id="status">接続中...</div>
-  <div id="idle">インターホン待機中</div>
+  <div id="idle">
+    <div class="label">インターホン待機中</div>
+    <form id="sendForm">
+      <input id="sendInput" type="text" placeholder="メッセージを入力して送信" autocomplete="off">
+      <button id="sendBtn" type="submit">送信</button>
+    </form>
+    <div id="sendStatus"></div>
+  </div>
   <div id="overlay">
     <div class="icon">🔔</div>
     <div class="message" id="message"></div>
@@ -146,6 +170,29 @@ function connect() {
     } catch (e) { /* ignore malformed payloads */ }
   };
 }
+
+const sendForm = document.getElementById('sendForm');
+const sendInput = document.getElementById('sendInput');
+const sendStatus = document.getElementById('sendStatus');
+sendForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const message = sendInput.value.trim();
+  if (!message) return;
+  sendStatus.textContent = '送信中...';
+  try {
+    const res = await fetch('/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    const data = await res.json();
+    sendStatus.textContent = data.ok ? `送信しました (${data.delivered}件)` : '送信に失敗しました';
+  } catch (e) {
+    sendStatus.textContent = '送信に失敗しました';
+  }
+  sendInput.value = '';
+  setTimeout(() => { sendStatus.textContent = ''; }, 3000);
+});
 
 document.getElementById('unlockBtn').addEventListener('click', () => {
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
