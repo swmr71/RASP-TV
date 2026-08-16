@@ -42,6 +42,10 @@ class TvMenuApp:
     self.last_event_time = 0
     self.debounce_interval = 0.3
 
+    # リモコン(CEC)・キーボードの入力を今どこに配送するか。
+    # メニュー以外（オンスクリーンキーボード等）を開いている間はそちらに切り替える。
+    self.input_target = self
+
     # --- 1. ヘッダーエリア（時計＆天気） ---
     header_frame = tk.Frame(root, bg="#11111b")
     header_frame.pack(fill="x", side="top", ipady=12)
@@ -99,11 +103,14 @@ class TvMenuApp:
 
     self.update_selection()
 
-    # キーバインド
-    self.root.bind("<Up>", lambda e: self.navigate(-1))
-    self.root.bind("<Down>", lambda e: self.navigate(1))
-    self.root.bind("<Return>", lambda e: self.select_item())
-    self.root.bind("<Escape>", lambda e: self.shutdown())
+    # キーバインド（実際の処理は input_target に委譲。ダイアログを開いている
+    # 間はそちらに切り替わる）
+    self.root.bind("<Up>", lambda e: self.input_target.on_up())
+    self.root.bind("<Down>", lambda e: self.input_target.on_down())
+    self.root.bind("<Left>", lambda e: self.input_target.on_left())
+    self.root.bind("<Right>", lambda e: self.input_target.on_right())
+    self.root.bind("<Return>", lambda e: self.input_target.on_select())
+    self.root.bind("<Escape>", lambda e: self.input_target.on_cancel())
     self.root.protocol("WM_DELETE_WINDOW", self.shutdown)
 
     # 時計と天気の自動更新を呼び出し
@@ -186,12 +193,37 @@ class TvMenuApp:
     else:
       pass
 
+  # --- input_target インターフェース（メインメニューがアクティブなとき） ---
+
+  def on_up(self):
+    self.navigate(-1)
+
+  def on_down(self):
+    self.navigate(1)
+
+  def on_left(self):
+    pass
+
+  def on_right(self):
+    pass
+
+  def on_select(self):
+    self.select_item()
+
+  def on_cancel(self):
+    self.shutdown()
+
   def open_intercom_keyboard(self):
-    OnScreenKeyboard(
+    keyboard = OnScreenKeyboard(
         self.root,
         title="インターホン メッセージ入力",
         on_submit=self.send_intercom_message,
+        on_close=self.release_input_target,
     )
+    self.input_target = keyboard
+
+  def release_input_target(self):
+    self.input_target = self
 
   def send_intercom_message(self, message, volume=1.0):
     self.show_toast(f"送信中: {message} (音量{round(volume * 100)}%)")
@@ -274,12 +306,18 @@ class TvMenuApp:
             continue
           self.last_event_time = now
 
-          if "up" in line_lower:
-            self.root.after(0, lambda: self.navigate(-1))
+          if "left" in line_lower:
+            self.root.after(0, lambda: self.input_target.on_left())
+          elif "right" in line_lower:
+            self.root.after(0, lambda: self.input_target.on_right())
+          elif "up" in line_lower:
+            self.root.after(0, lambda: self.input_target.on_up())
           elif "down" in line_lower:
-            self.root.after(0, lambda: self.navigate(1))
+            self.root.after(0, lambda: self.input_target.on_down())
           elif "select" in line_lower or "enter" in line_lower:
-            self.root.after(0, self.select_item)
+            self.root.after(0, lambda: self.input_target.on_select())
+          elif "exit" in line_lower or "back" in line_lower:
+            self.root.after(0, lambda: self.input_target.on_cancel())
     except Exception:
       pass
 

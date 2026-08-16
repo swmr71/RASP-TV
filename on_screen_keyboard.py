@@ -47,8 +47,9 @@ class OnScreenKeyboard:
   キャンセル時やEscapeでは何も呼ばれずに閉じる。
   """
 
-  def __init__(self, parent, title="メッセージ入力", on_submit=None):
+  def __init__(self, parent, title="メッセージ入力", on_submit=None, on_close=None):
     self.on_submit = on_submit
+    self.on_close = on_close
     self.text = ""
     self.mode = "kana"
     self.volume = 1.0
@@ -61,6 +62,8 @@ class OnScreenKeyboard:
     self.win.configure(bg=BG)
     self.win.grab_set()
     self.win.focus_set()
+    # マップ直後はfocus_setが効かないことがあるため、少し遅らせて強制フォーカス
+    self.win.after(50, self.win.focus_force)
 
     tk.Label(
         self.win, text=title, font=("Helvetica", 20, "bold"),
@@ -171,6 +174,26 @@ class OnScreenKeyboard:
     row, col = self.pos
     self.grid[row][col]["action"]()
 
+  # --- input_target インターフェース（親アプリのCEC/キー処理から呼ばれる） ---
+
+  def on_up(self):
+    self.navigate(-1, 0)
+
+  def on_down(self):
+    self.navigate(1, 0)
+
+  def on_left(self):
+    self.navigate(0, -1)
+
+  def on_right(self):
+    self.navigate(0, 1)
+
+  def on_select(self):
+    self.activate()
+
+  def on_cancel(self):
+    self.cancel()
+
   # --- 文字操作 ---
 
   def insert_char(self, ch):
@@ -225,7 +248,11 @@ class OnScreenKeyboard:
     self.win.destroy()
     if text and self.on_submit:
       self.on_submit(text, volume)
+    if self.on_close:
+      self.on_close()
 
   def cancel(self):
     self.win.grab_release()
     self.win.destroy()
+    if self.on_close:
+      self.on_close()
