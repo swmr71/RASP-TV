@@ -17,6 +17,31 @@ sock = Sock(app)
 _clients = set()
 _clients_lock = threading.Lock()
 
+_local_listeners = []
+_local_listeners_lock = threading.Lock()
+
+
+def add_local_listener(callback):
+  """このサーバー自身のプロセス内(tv_gui.pyなど)にメッセージ着信を通知する。"""
+  with _local_listeners_lock:
+    _local_listeners.append(callback)
+
+
+def remove_local_listener(callback):
+  with _local_listeners_lock:
+    if callback in _local_listeners:
+      _local_listeners.remove(callback)
+
+
+def _notify_local_listeners(message):
+  with _local_listeners_lock:
+    listeners = list(_local_listeners)
+  for callback in listeners:
+    try:
+      callback(message)
+    except Exception:
+      pass
+
 RECEIVER_PAGE = """<!doctype html>
 <html lang="ja">
 <head>
@@ -258,6 +283,7 @@ def _broadcast(message):
         dead.append(conn)
     for conn in dead:
       _clients.discard(conn)
+  _notify_local_listeners(message)
   return delivered
 
 

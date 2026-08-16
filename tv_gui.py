@@ -9,6 +9,7 @@ import urllib.request
 
 import intercom_client
 import intercom_server
+import local_notify
 from on_screen_keyboard import OnScreenKeyboard
 
 
@@ -110,9 +111,11 @@ class TvMenuApp:
     self.fetch_weather_async()
 
     # インターホン受信サーバー（他端末のブラウザ／自分自身から待ち受け）
+    self._intercom_overlay = None
     self.intercom_server_thread = intercom_server.start_server_thread(
         port=5005
     )
+    intercom_server.add_local_listener(self.handle_incoming_intercom)
 
     # CEC監視スレッド（HDMI 1対応）
     self.cec_process = None
@@ -206,6 +209,38 @@ class TvMenuApp:
       self.root.after(0, lambda: self.show_toast(text))
 
     threading.Thread(target=task, daemon=True).start()
+
+  def handle_incoming_intercom(self, message):
+    """intercom_serverが別スレッドでメッセージを受信したときのコールバック。"""
+    self.root.after(0, lambda: self.show_intercom_overlay(message))
+
+  def show_intercom_overlay(self, message):
+    local_notify.play_chime()
+    threading.Timer(0.7, lambda: local_notify.speak(message)).start()
+
+    if self._intercom_overlay is not None:
+      self._intercom_overlay.destroy()
+
+    overlay = tk.Frame(self.root, bg="#11111b")
+    overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+    overlay.lift()
+    tk.Label(
+        overlay, text="🔔", font=("Helvetica", 72), bg="#11111b",
+        fg="#cdd6f4",
+    ).pack(pady=(160, 20))
+    tk.Label(
+        overlay, text=message, font=("Helvetica", 36, "bold"),
+        fg="#f9e2af", bg="#11111b", wraplength=900, justify="center",
+    ).pack(padx=40)
+    self._intercom_overlay = overlay
+
+    duration_ms = max(8000, len(message) * 400)
+    self.root.after(duration_ms, self.close_intercom_overlay)
+
+  def close_intercom_overlay(self):
+    if self._intercom_overlay is not None:
+      self._intercom_overlay.destroy()
+      self._intercom_overlay = None
 
   def show_toast(self, text, duration_ms=2500):
     if getattr(self, "_toast_label", None) is not None:
